@@ -1,0 +1,12 @@
+websockets
+schedule
+pandas
+requests
+scipy
+matplotlib
+numpy
+python-dateutil
+pytz
+reportlab
+python-dotenv
+slack-sdk

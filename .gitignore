@@ -1,0 +1,25 @@
+﻿# Python / virtualenv
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Environment files
+.env
+
+# Logs and reports
+save/
+total_log/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# PDF and binary outputs
+*.pdf
+
+# Misc
+*.log
