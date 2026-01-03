@@ -12,7 +12,7 @@ def job():
 
 def start_scheduler():
     # 매일 09:01:00에 일간 보고 전송
-    schedule.every().day.at("21:46:30").do(lambda: log_and_send("Daily", days_offset=1))
+    schedule.every().day.at("09:01:20").do(lambda: log_and_send("Daily", days_offset=1))
 
     # 매주 월요일 09:01:20에 주간 보고 전송
     schedule.every().monday.at("09:01:20").do(lambda: log_and_send("Weekly", days_offset=7))
