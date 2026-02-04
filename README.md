@@ -33,7 +33,7 @@ WEBSOCKET_URI=...
 ```
 
 선택값:
-- `BOT_LOG_DIR`: 로그 디렉터리 경로(기본값 `/home/Ubicomp/bot/total_log`, 실패 시 `./total_log`로 대체)
+- `BOT_LOG_DIR`: 로그 디렉터리 경로(기본값 `./total_log`)
 - `DATA_BASE_URL`: 센서 데이터 API 주소
 - `WEBSOCKET_URI`: incident 리스너 WebSocket 주소 (미설정 시 `FLASK_SERVER_ADDRESS` + `FLASK_SERVER_PORT` 사용)
 - `FLASK_SERVER_ADDRESS`: 기본값 `ws://localhost`
@@ -44,7 +44,7 @@ WEBSOCKET_URI=...
 일간/주간/월간 리포트를 스케줄에 따라 전송합니다.
 
 현재 설정된 전송 시각(KST):
-- Daily: 매일 `06:50:10`
+- Daily: 매일 `17:55:10`
 - Weekly: 매주 월요일 `09:01:20`
 - Monthly 트리거 체크: 매일 `09:01:50` (매월 1일만 월간 리포트 전송)
 
@@ -57,6 +57,26 @@ WebSocket으로 들어오는 incident 이벤트를 Slack으로 전송합니다.
 
 ```bash
 python incident_bot.py
+```
+
+## PM2 운영(권장)
+장기 운영 시 `start.py`, `incident_bot.py`를 PM2로 각각 관리하는 것을 권장합니다.
+
+```bash
+pm2 start ecosystem.config.js
+pm2 status
+pm2 logs
+```
+
+자주 쓰는 명령:
+- 설정/코드 반영: `pm2 reload ecosystem.config.js`
+- 환경변수(.env) 반영: `pm2 restart ecosystem.config.js --update-env`
+- 재부팅 후 자동 복구 목록 저장: `pm2 save`
+- 실시간 모니터링: `pm2 monit`
+
+부팅 자동 실행(최초 1회):
+```bash
+pm2 startup systemd -u <USER> --hp /home/<USER>
 ```
 
 ## 출력 경로
@@ -138,7 +158,7 @@ python incident_bot.py
   - `slack_log.txt`, `incident_log.txt`로 분리 저장합니다.
 - `Slack_bot/utils/logging.py`
   - 스케줄러 및 서비스 실행 로그를 기록합니다.
-  - 기본 로그 경로는 `/home/Ubicomp/bot/total_log`, 실패 시 프로젝트 내 `total_log`로 대체합니다.
+  - 기본 로그 경로는 프로젝트 내 `total_log`이며, `BOT_LOG_DIR` 설정으로 변경할 수 있습니다.
 
 ### 데이터 모델
 - `Slack_bot/models.py`

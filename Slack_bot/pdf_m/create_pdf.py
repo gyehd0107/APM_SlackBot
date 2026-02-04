@@ -204,9 +204,12 @@ def save_report_pdf(
     summary_cards = [
         ["Collection Duration", f"{time_difference} ({total_hours:.0f} min)"],
         ["Total Data Cells", f"{int(total_cells):,}"],
-        ["NaN Cells", f"{int(nan_cells):,}"],
     ]
-    summary_table = Table(summary_cards, colWidths=[2.1 * inch, 4.7 * inch], rowHeights=[0.35 * inch] * 3)
+    summary_table = Table(
+        summary_cards,
+        colWidths=[2.1 * inch, 4.7 * inch],
+        rowHeights=[0.35 * inch] * len(summary_cards),
+    )
     summary_table.hAlign = "LEFT"
     summary_table.setStyle(
         TableStyle(

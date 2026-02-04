@@ -1,7 +1,10 @@
 from datetime import datetime
 import os
 
-DEFAULT_LOG_DIR = os.getenv("BOT_LOG_DIR", "/home/Ubicomp/bot/total_log")
+PROJECT_LOG_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "total_log")
+)
+DEFAULT_LOG_DIR = os.getenv("BOT_LOG_DIR", PROJECT_LOG_DIR)
 DEFAULT_LOG_FILE = "total_services_log.txt"
 
 

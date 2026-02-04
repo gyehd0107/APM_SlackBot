@@ -1,7 +1,10 @@
 from datetime import datetime
 import os
 
-DEFAULT_LOG_DIR = os.getenv("BOT_LOG_DIR", "/home/Ubicomp/bot/total_log")
+PROJECT_LOG_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "total_log")
+)
+DEFAULT_LOG_DIR = os.getenv("BOT_LOG_DIR", PROJECT_LOG_DIR)
 
 
 def _append_line(log_path, message):
@@ -11,7 +14,7 @@ def _append_line(log_path, message):
 
 
 def log(message):
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "total_log"))
+    base_dir = PROJECT_LOG_DIR
     os.makedirs(base_dir, exist_ok=True)
     log_path = os.path.join(base_dir, "slack_log.txt")
     _append_line(log_path, message)
@@ -22,7 +25,7 @@ def incident_log(message, log_dir=None):
     try:
         os.makedirs(base_dir, exist_ok=True)
     except OSError:
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "total_log"))
+        base_dir = PROJECT_LOG_DIR
         os.makedirs(base_dir, exist_ok=True)
     log_path = os.path.join(base_dir, "incident_log.txt")
     _append_line(log_path, message)
