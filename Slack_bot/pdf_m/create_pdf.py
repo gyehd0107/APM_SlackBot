@@ -1,10 +1,13 @@
 import os
 from datetime import datetime
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
-from reportlab.lib.pagesizes import letter, inch
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+import pandas as pd
 from reportlab.lib import colors
-from reportlab.graphics.shapes import Drawing, Line
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
 from Slack_bot.log_m.log import log
 
 REPORT_TITLES = {
@@ -12,6 +15,75 @@ REPORT_TITLES = {
     "Weekly": "Weekly Report",
     "Monthly": "Monthly Report",
 }
+
+PALETTE = {
+    "primary": colors.HexColor("#2F5B9A"),
+    "secondary": colors.HexColor("#3E6FB3"),
+    "accent": colors.HexColor("#3E6FB3"),
+    "header_bg": colors.HexColor("#2F5B9A"),
+    "row_even": colors.HexColor("#F7F9FC"),
+    "row_odd": colors.HexColor("#FFFFFF"),
+    "border": colors.HexColor("#D0D7DE"),
+    "ok": colors.HexColor("#1A7F37"),
+    "warn": colors.HexColor("#B54708"),
+}
+
+
+def _format_dt(value):
+    if pd.isna(value):
+        return "-"
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _summarize_nan_intervals(nan_rows):
+    if nan_rows is None or nan_rows.empty:
+        return []
+
+    time_col = "APMdatetime"
+    if time_col not in nan_rows.columns:
+        time_col = "RPMdatetime"
+
+    rows = nan_rows[[time_col]].copy()
+    rows[time_col] = pd.to_datetime(rows[time_col], errors="coerce")
+    rows = rows.dropna(subset=[time_col]).sort_values(time_col)
+    if rows.empty:
+        return []
+
+    diffs = rows[time_col].diff().dropna()
+    positive_diffs = diffs[diffs > pd.Timedelta(0)]
+    base_gap = positive_diffs.median() if not positive_diffs.empty else pd.Timedelta(minutes=1)
+    gap_threshold = base_gap * 1.5
+
+    intervals = []
+    start = rows[time_col].iloc[0]
+    prev = start
+    count = 1
+    for current in rows[time_col].iloc[1:]:
+        if current - prev <= gap_threshold:
+            count += 1
+        else:
+            intervals.append((start, prev, count))
+            start = current
+            count = 1
+        prev = current
+    intervals.append((start, prev, count))
+    return intervals
+
+
+def _modern_table_style():
+    return TableStyle(
+        [
+            ("BACKGROUND", (0, 0), (-1, 0), PALETTE["header_bg"]),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 7),
+            ("TOPPADDING", (0, 0), (-1, 0), 7),
+            ("GRID", (0, 0), (-1, -1), 0.5, PALETTE["border"]),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [PALETTE["row_even"], PALETTE["row_odd"]]),
+        ]
+    )
 
 
 def save_report_pdf(
@@ -28,7 +100,7 @@ def save_report_pdf(
     nan_cells,
     error_data,
     time_graph,
-    pm_statistics
+    pm_statistics,
 ):
     year = cra[:4]
     month = cra[4:6]
@@ -50,151 +122,203 @@ def save_report_pdf(
     crb_formatted = datetime.strptime(crb, "%Y%m%dT%H%M%S").strftime("%Y-%m-%d")
     output_filename = os.path.join(base_path, f"{cra_formatted}~{crb_formatted}.pdf")
 
-    # 메인 제목 설정
     main_title = REPORT_TITLES.get(report_type, "Monthly Report")
-
-    pdf = SimpleDocTemplate(output_filename, pagesize=letter)
+    pdf = SimpleDocTemplate(
+        output_filename,
+        pagesize=letter,
+        leftMargin=0.6 * inch,
+        rightMargin=0.6 * inch,
+        topMargin=0.6 * inch,
+        bottomMargin=0.6 * inch,
+    )
     styles = getSampleStyleSheet()
 
-    # 스타일 정의
-    main_title_style = ParagraphStyle("MainTitle", parent=styles["Title"], fontSize=16, alignment=1)
-    sub_title_style = ParagraphStyle("SubTitle", parent=styles["Normal"], fontSize=12, alignment=2)
-    sub2_title_style = ParagraphStyle("SubTitle", parent=styles["Normal"], fontSize=10)
-    heading_style = ParagraphStyle("Heading", parent=styles["Heading2"], fontSize=14)
-    mid_style = ParagraphStyle("Mid", parent=styles["Heading3"], fontSize=12)
-    
+    title_style = ParagraphStyle(
+        "TitleStyle",
+        parent=styles["Title"],
+        fontSize=20,
+        leading=24,
+        alignment=1,
+        fontName="Helvetica-Bold",
+        textColor=colors.black,
+    )
+    subtitle_style = ParagraphStyle(
+        "SubTitleStyle",
+        parent=styles["Normal"],
+        fontSize=13,
+        leading=16,
+        alignment=1,
+        fontName="Helvetica",
+        textColor=colors.black,
+    )
+    section_style = ParagraphStyle(
+        "SectionStyle",
+        parent=styles["Heading2"],
+        fontSize=12,
+        leading=15,
+        fontName="Helvetica-Bold",
+        textColor=colors.black,
+        spaceBefore=4,
+    )
+    body_style = ParagraphStyle(
+        "BodyStyle",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=14,
+        fontName="Helvetica",
+        textColor=colors.black,
+    )
+    label_style = ParagraphStyle(
+        "LabelStyle",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=13,
+        fontName="Helvetica",
+        textColor=colors.black,
+    )
+
     elements = []
 
-    # 메인 제목 추가
-    main_title_text = Paragraph(f"<b>{main_title}</b>", main_title_style)
-    elements.append(main_title_text)
+    title_table = Table(
+        [[Paragraph(f"<b>{main_title}</b>", title_style)], [Paragraph(f"{cra_formatted} ~ {crb_formatted}", subtitle_style)]],
+        colWidths=[6.8 * inch],
+    )
+    title_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("LINEBELOW", (0, -1), (-1, -1), 1, PALETTE["border"]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 12),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
+    )
+    elements.append(title_table)
     elements.append(Spacer(1, 0.2 * inch))
 
-    # 구분선 추가
-    line_drawing = Drawing(500, 1)
-    line_drawing.add(Line(0, 0, 500, 0, strokeWidth=1, strokeColor=colors.black))
-    elements.append(line_drawing)
-    elements.append(Spacer(1, 0.2 * inch))
-
-    # 날짜 정보 추가 (오른쪽 정렬)
-    date_text = Paragraph(f"<b>{cra_formatted} ~ {crb_formatted}</b>", sub_title_style)
-    elements.append(date_text)
+    elements.append(Paragraph(f"<b>1. {report_type} Data Collection Summary</b>", section_style))
     elements.append(Spacer(1, 0.1 * inch))
 
-    # 데이터 수집 요약 섹션
-    title = Paragraph(f"<b>1. {report_type} Data Collection Summary</b>", heading_style)
-    elements.append(title)
-    elements.append(Spacer(1, 0.2 * inch))
-
-    time_difference_str = str(time_difference)
-    time_difference_text = Paragraph(
-        f"<b>- Total {report_type} Data Collection Time: {time_difference_str} ({total_hours:.0f} minute)</b>",
-        sub2_title_style
+    summary_cards = [
+        ["Collection Duration", f"{time_difference} ({total_hours:.0f} min)"],
+        ["Total Data Cells", f"{int(total_cells):,}"],
+        ["NaN Cells", f"{int(nan_cells):,}"],
+    ]
+    summary_table = Table(summary_cards, colWidths=[2.1 * inch, 4.7 * inch], rowHeights=[0.35 * inch] * 3)
+    summary_table.hAlign = "LEFT"
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), PALETTE["secondary"]),
+                ("TEXTCOLOR", (0, 0), (0, -1), colors.whitesmoke),
+                ("TEXTCOLOR", (1, 0), (1, -1), colors.black),
+                ("BACKGROUND", (1, 0), (1, -1), colors.HexColor("#F5F7FA")),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("GRID", (0, 0), (-1, -1), 0.5, PALETTE["border"]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ]
+        )
     )
-    elements.append(time_difference_text)
+    elements.append(summary_table)
     elements.append(Spacer(1, 0.2 * inch))
 
-    total_cells_text = Paragraph(
-        f"<b>- Number of {report_type} Total Data Cells: {total_cells:.0f}</b>",
-        sub2_title_style,
-    )
-    elements.append(total_cells_text)
-    elements.append(Spacer(1, 0.2 * inch))
+    elements.append(Paragraph("<b>2. NaN Interval Summary</b>", section_style))
+    elements.append(Spacer(1, 0.08 * inch))
 
-    nan_cells_text = Paragraph(f"<b>- Number of {report_type} Data NaNs: {nan_cells}</b>", sub2_title_style)
-    elements.append(nan_cells_text)
-    elements.append(Spacer(1, 0.2 * inch))
-
-    # 에러 데이터 정보 테이블 추가
     if error_data:
-        elements.append(Paragraph("<b>Error Data Details:</b>", mid_style))
-        elements.append(Spacer(1, 0.1 * inch))
         for column, nan_rows in error_data:
-            elements.append(Paragraph(f"<b>- Column:</b> {column}", sub2_title_style))
-            # 테이블 헤더 및 데이터 구성
-            table_data = [["APMdatetime", "RPMdatetime", "Value"]]
-            table_data.extend(nan_rows.values.tolist())
-            error_table = Table(table_data, colWidths=[150, 150, 150])
-            error_table_style = TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-                ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-                ("GRID", (0, 0), (-1, -1), 1, colors.black),
-            ])
-            error_table.setStyle(error_table_style)
+            intervals = _summarize_nan_intervals(nan_rows)
+            elements.append(
+                Paragraph(f"<b>{column}</b> <font color='#57606A'>({len(nan_rows):,} NaN)</font>", label_style)
+            )
+            table_data = [["NaN Interval Start", "NaN Interval End", "Count"]]
+            if intervals:
+                for start_dt, end_dt, count in intervals:
+                    table_data.append([_format_dt(start_dt), _format_dt(end_dt), f"{count:,}"])
+            else:
+                table_data.append(["-", "-", "0"])
+
+            error_table = Table(table_data, colWidths=[2.25 * inch, 2.25 * inch, 1.2 * inch])
+            error_table.hAlign = "LEFT"
+            error_table.setStyle(_modern_table_style())
             elements.append(error_table)
-            elements.append(Spacer(1, 0.2 * inch))
+            elements.append(Spacer(1, 0.12 * inch))
+    else:
+        no_nan_table = Table([["No NaN interval detected in this report range."]], colWidths=[6.8 * inch])
+        no_nan_table.hAlign = "LEFT"
+        no_nan_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#E7F5EC")),
+                    ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
+                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("BOX", (0, 0), (-1, -1), 0.5, PALETTE["border"]),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        elements.append(no_nan_table)
 
-    # PM 센서 통계 테이블 추가
-    table_data = [["Sensor", "Max", "Min", "Mean"]]
+    elements.append(Spacer(1, 0.18 * inch))
+    elements.append(Paragraph("<b>3. PM Statistics</b>", section_style))
+    elements.append(Spacer(1, 0.08 * inch))
+
+    stats_data = [["Sensor", "Max", "Min", "Mean"]]
     for sensor, stats in pm_statistics.items():
-        table_data.append([sensor, f"{stats['Max']:.2f}", f"{stats['Min']:.2f}", f"{stats['Mean']:.2f}"])
-    stats_table = Table(table_data, colWidths=[150, 100, 100, 100])
-    stats_table_style = TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-    ])
-    stats_table.setStyle(stats_table_style)
+        stats_data.append([sensor, f"{stats['Max']:.2f}", f"{stats['Min']:.2f}", f"{stats['Mean']:.2f}"])
+
+    stats_table = Table(stats_data, colWidths=[2.1 * inch, 1.55 * inch, 1.55 * inch, 1.6 * inch])
+    stats_table.hAlign = "LEFT"
+    stats_table.setStyle(_modern_table_style())
     elements.append(stats_table)
-    elements.append(Spacer(1, 0.2 * inch))
-    
-    # 새 페이지 추가 (검증 결과 섹션 전환)
+
     elements.append(PageBreak())
-    
-    # 검증 결과 섹션
-    title = Paragraph("<b>3. Validation Results</b>", heading_style)
-    elements.append(title)
-    elements.append(Spacer(1, 0.2 * inch))
-
-    acceptable_range_text = Paragraph(
-        f"Acceptable range: <b>{acceptable_lower_bound:.2f}</b> ~ <b>{acceptable_upper_bound:.2f}</b>",
-        styles["Normal"]
+    elements.append(Paragraph("<b>4. Validation Results</b>", section_style))
+    elements.append(
+        Paragraph(
+            f"Acceptable range: <b>{acceptable_lower_bound:.2f}</b> ~ <b>{acceptable_upper_bound:.2f}</b>",
+            body_style,
+        )
     )
-    elements.append(acceptable_range_text)
-    elements.append(Spacer(1, 0.2 * inch))
+    elements.append(Spacer(1, 0.1 * inch))
 
-    table_data = [["Sensor", "Mean Difference", "Status"]]
+    validation_data = [["Sensor", "Mean Difference", "Status"]]
     for sensor, result in validation_results.items():
         status = "Within range" if result["within_acceptable_range"] else "Out of range"
-        table_data.append([sensor, f"{result['mean_difference']:.2f}", status])
-    validation_table = Table(table_data, colWidths=[150, 100, 100])
-    validation_table_style = TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-    ])
-    # 상태 열의 텍스트 색상을 동적으로 설정
-    for row_idx, row in enumerate(table_data[1:], start=1):
-        status = row[2]
-        if status == "Within range":
-            validation_table_style.add("TEXTCOLOR", (2, row_idx), (2, row_idx), colors.green)
-        elif status == "Out of range":
-            validation_table_style.add("TEXTCOLOR", (2, row_idx), (2, row_idx), colors.red)
-    validation_table.setStyle(validation_table_style)
-    elements.append(validation_table)
+        validation_data.append([sensor, f"{result['mean_difference']:.2f}", status])
 
-    # 그래프 이미지 추가 (존재하는 경우)
+    validation_table = Table(validation_data, colWidths=[2.2 * inch, 2.1 * inch, 2.5 * inch])
+    validation_table.hAlign = "LEFT"
+    validation_style = _modern_table_style()
+    for row_idx, row in enumerate(validation_data[1:], start=1):
+        if row[2] == "Within range":
+            validation_style.add("BACKGROUND", (2, row_idx), (2, row_idx), colors.HexColor("#E7F5EC"))
+            validation_style.add("TEXTCOLOR", (2, row_idx), (2, row_idx), colors.black)
+        else:
+            validation_style.add("BACKGROUND", (2, row_idx), (2, row_idx), colors.HexColor("#FFF4E5"))
+            validation_style.add("TEXTCOLOR", (2, row_idx), (2, row_idx), colors.black)
+        validation_style.add("FONTNAME", (2, row_idx), (2, row_idx), "Helvetica-Bold")
+    validation_table.setStyle(validation_style)
+    elements.append(validation_table)
+    elements.append(Spacer(1, 0.18 * inch))
+
     if graph_path and os.path.exists(graph_path):
-        graph_img = Image(graph_path, width=550, height=250)
-        elements.append(Spacer(1, 0.2 * inch))
-        elements.append(graph_img)
-    
+        elements.append(Paragraph("<b>Validation Distribution Chart</b>", label_style))
+        elements.append(Spacer(1, 0.05 * inch))
+        elements.append(Image(graph_path, width=6.8 * inch, height=2.9 * inch))
+        elements.append(Spacer(1, 0.12 * inch))
+
     if time_graph and os.path.exists(time_graph):
-        time_graph_img = Image(time_graph, width=456, height=636)
-        elements.append(Spacer(1, 0.2 * inch))
-        elements.append(time_graph_img)
+        elements.append(Paragraph("<b>Sensor Trend Chart</b>", label_style))
+        elements.append(Spacer(1, 0.05 * inch))
+        elements.append(Image(time_graph, width=6.4 * inch, height=8.0 * inch))
 
     pdf.build(elements)
     log(f"PDF report saved: {output_filename}")

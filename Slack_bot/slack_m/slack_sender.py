@@ -155,3 +155,138 @@ def send_plot_to_slack(pdf_file_path, plot_file_path, cra, crb, report_type):
             log(f"Slack upload failed for PDF file: {pdf_response['error']}")
     except Exception as exc:
         log(f"Error sending files to Slack: {exc}")
+
+
+def send_nan_alert_to_slack(cra, crb, error_data):
+    start_datetime = cra.strftime("%Y-%m-%d %H:%M:%S%z")
+    end_datetime = crb.strftime("%Y-%m-%d %H:%M:%S%z")
+    start_datetime = f"{start_datetime[:-5]}{start_datetime[-5:-2]}:{start_datetime[-2:]}"
+    end_datetime = f"{end_datetime[:-5]}{end_datetime[-5:-2]}:{end_datetime[-2:]}"
+
+    header = "[DATA Quality Alert] NaN Detected"
+    period = f"({start_datetime} ~ {end_datetime})"
+
+    try:
+        if not error_data:
+            header_text = f"{header} 🟢"
+            message = f"{header_text}\n{period}\n\nNo NaN (Not a Number) detected"
+            response = client.chat_postMessage(
+                channel=SLACK_CHANNEL_ID,
+                text=header_text,
+                blocks=[
+                    {"type": "section", "text": {"type": "mrkdwn", "text": message}}
+                ],
+            )
+        else:
+            header_text = f"{header} 🔴"
+            alert_text = "NaN (Not a Number) detected"
+            rows = [
+                [
+                    {
+                        "type": "rich_text",
+                        "elements": [
+                            {
+                                "type": "rich_text_section",
+                                "elements": [
+                                    {
+                                        "type": "text",
+                                        "text": "Column",
+                                        "style": {"bold": True},
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "type": "rich_text",
+                        "elements": [
+                            {
+                                "type": "rich_text_section",
+                                "elements": [
+                                    {
+                                        "type": "text",
+                                        "text": "NaN Count",
+                                        "style": {"bold": True},
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                ]
+            ]
+            total_nan = 0
+            for column, nan_rows in error_data:
+                count = len(nan_rows)
+                if count == 0:
+                    continue
+                total_nan += count
+                rows.append(
+                    [
+                        {
+                            "type": "rich_text",
+                            "elements": [
+                                {
+                                    "type": "rich_text_section",
+                                    "elements": [{"type": "text", "text": column}],
+                                }
+                            ],
+                        },
+                        {
+                            "type": "rich_text",
+                            "elements": [
+                                {
+                                    "type": "rich_text_section",
+                                    "elements": [
+                                        {
+                                            "type": "text",
+                                            "text": f"{count:,}",
+                                            "style": {"bold": True},
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ]
+                )
+
+            response = client.chat_postMessage(
+                channel=SLACK_CHANNEL_ID,
+                text=header_text,
+                blocks=[
+                    {
+                        "type": "header",
+                        "text": {"type": "plain_text", "text": header_text},
+                    },
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": f"*{period}*"},
+                    },
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": alert_text,
+                        },
+                    },
+                ],
+                attachments=[
+                    {
+                        "blocks": [
+                            {
+                                "type": "table",
+                                "column_settings": [
+                                    {"is_wrapped": True},
+                                    {"align": "right"},
+                                ],
+                                "rows": rows,
+                            }
+                        ]
+                    }
+                ],
+            )
+        if response["ok"]:
+            log("NaN alert successfully sent to Slack.")
+        else:
+            log(f"Failed to send NaN alert: {response['error']}")
+    except Exception as exc:
+        log(f"Error sending NaN alert to Slack: {exc}")

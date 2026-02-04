@@ -21,30 +21,32 @@
 pip install -r install.txt
 ```
 
-## 가상환경(venv)
-GitHub에는 `venv/`를 올리지 않습니다. 로컬에서 생성 후 설치하세요.
-
-```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -r install.txt
-```
-
 ## 환경 설정
-`./.env` 파일을 생성하고 아래 값을 설정합니다.
+`APM_SlackBot/.env` 파일 하나에 아래 값을 설정합니다.
 
 ```
 SLACK_BOT_TOKEN=...
 SLACK_CHANNEL_ID=...
 SLACK_ISSUE_CHANNEL_ID=...
+DATA_BASE_URL=...
+WEBSOCKET_URI=...
 ```
 
 선택값:
 - `BOT_LOG_DIR`: 로그 디렉터리 경로(기본값 `/home/Ubicomp/bot/total_log`, 실패 시 `./total_log`로 대체)
+- `DATA_BASE_URL`: 센서 데이터 API 주소
+- `WEBSOCKET_URI`: incident 리스너 WebSocket 주소 (미설정 시 `FLASK_SERVER_ADDRESS` + `FLASK_SERVER_PORT` 사용)
+- `FLASK_SERVER_ADDRESS`: 기본값 `ws://localhost`
+- `FLASK_SERVER_PORT`: 기본값 `5002`
 
 ## 실행 방법
 ### 스케줄러(리포트 전송)
 일간/주간/월간 리포트를 스케줄에 따라 전송합니다.
+
+현재 설정된 전송 시각(KST):
+- Daily: 매일 `06:50:10`
+- Weekly: 매주 월요일 `09:01:20`
+- Monthly 트리거 체크: 매일 `09:01:50` (매월 1일만 월간 리포트 전송)
 
 ```bash
 python start.py
@@ -85,12 +87,14 @@ python incident_bot.py
   - 리포트 결과와 파일을 Slack으로 전송합니다.
   - `send_validation_results_to_slack`: 센서별 검증 결과를 Block 메시지로 전송합니다.
   - `send_plot_to_slack`: 그래프/리포트 PDF 파일을 업로드합니다.
+  - Daily 리포트는 NaN 알림을 먼저 전송한 뒤, 검증 결과/파일을 전송합니다.
+  - NaN 알림 메시지 헤더는 영문(`"[DATA Quality Alert] NaN Detected"`)으로 전송됩니다.
   - `default_blocks`, `restored_blocks`: incident 발생/복구 메시지 포맷을 생성해 전송합니다.
 
 ### 데이터 수집/전처리
 - `Slack_bot/data_m/fetch_data.py`
   - HTTP API에서 센서 데이터를 가져옵니다.
-  - `BASE_URL`과 `HEADERS`를 사용해 날짜 구간 단위로 데이터를 수집합니다.
+  - `.env`의 `DATA_BASE_URL`과 코드 내 `HEADERS`를 사용해 날짜 구간 단위로 데이터를 수집합니다.
   - 응답의 `m2m:cin`을 파싱해 CSV 형태의 리스트로 변환합니다.
 - `Slack_bot/data_m/create_df.py`
   - 수집한 리스트를 pandas DataFrame으로 변환합니다.
@@ -125,7 +129,7 @@ python incident_bot.py
 ### PDF 리포트 생성
 - `Slack_bot/pdf_m/create_pdf.py`
   - ReportLab으로 PDF를 생성합니다.
-  - 데이터 요약, 오류 데이터 테이블, 검증 결과, 그래프를 포함합니다.
+  - 데이터 요약, NaN 구간 요약 테이블, 검증 결과, 그래프를 포함합니다.
   - 저장 위치는 `save/report_pdf/...`입니다.
 
 ### 로깅
@@ -149,8 +153,8 @@ python incident_bot.py
   - 패키지 인식용 파일입니다.
 
 ## 설정 포인트 요약
-- 데이터 API URL: `Slack_bot/data_m/fetch_data.py`의 `BASE_URL`
-- WebSocket 주소: `incident_bot.py`의 `WEBSOCKET_URI`
+- 데이터 API URL: `.env`의 `DATA_BASE_URL`
+- WebSocket 주소: `.env`의 `WEBSOCKET_URI` (또는 `FLASK_SERVER_ADDRESS` + `FLASK_SERVER_PORT`)
 - 스케줄 시간: `start.py`에서 설정
 
 ## 동작 흐름 요약

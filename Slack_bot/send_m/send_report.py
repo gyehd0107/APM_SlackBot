@@ -9,6 +9,7 @@ from Slack_bot.pdf_m.create_pdf import save_report_pdf
 from Slack_bot.slack_m.slack_sender import (
     send_plot_to_slack,
     send_validation_results_to_slack,
+    send_nan_alert_to_slack,
 )
 from Slack_bot.log_m.log import log
 
@@ -84,6 +85,8 @@ def send_report(report_type, days_offset=None, months_offset=None):
     )
 
     # Slack 전송
+    if report_type == "Daily":
+        send_nan_alert_to_slack(cra, crb, error_data)
     send_validation_results_to_slack(
         validation_results,
         acceptable_lower_bound,

@@ -1,21 +1,24 @@
-﻿from datetime import datetime, timedelta
+from datetime import datetime, timedelta
 import os
 
 import requests
-from dotenv import load_dotenv
-
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
 from Slack_bot.log_m.log import log
 
 ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 load_dotenv(ENV_PATH)
 
-BASE_URL = os.getenv(
-    "DATA_BASE_URL", "http://114.71.220.59:2021/Mobius/Ksensor_ubicomp_2/data"
-)
+BASE_URL = os.getenv("DATA_BASE_URL")
+if not BASE_URL:
+    raise RuntimeError("DATA_BASE_URL is not set. Please configure .env in project root.")
 HEADERS = {
     "Accept": "application/json",
-    "X-M2M-RI": os.getenv("M2M_RI", "sdaf343545"),
-    "X-M2M-Origin": os.getenv("M2M_ORIGIN", "S20170717074825768bp2l"),
+    "X-M2M-RI": "sdaf343545",
+    "X-M2M-Origin": "S20170717074825768bp2l",
 }
 
 
@@ -41,7 +44,7 @@ def fetch_data_interval(cra_str, next_cra_str, base_url, headers):
 
         try:
             if isinstance(con_value, str):
-                row = [item.strip() for item in con_value.split(",")]  # 怨듬갚 ?쒓굅 ?ы븿
+                row = [item.strip() for item in con_value.split(",")]  # 공백 제거 포함
                 daily_data.append(row)
             else:
                 log(
@@ -71,4 +74,3 @@ def fetch_all_data(cra, crb):
         current_cra = next_cra
 
     return all_data
-

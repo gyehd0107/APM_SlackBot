@@ -1,20 +1,24 @@
-﻿import asyncio
+import asyncio
 import json
 import os
-
 import websockets
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
 from Slack_bot.models import lists
 from Slack_bot.log_m.log import incident_log
 from Slack_bot.slack_m.slack_sender import default_blocks, restored_blocks
 from Slack_bot.utils.logging import write_log
 
 ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), ".env"))
-load_dotenv(ENV_PATH)
+if os.path.exists(ENV_PATH):
+    load_dotenv(ENV_PATH)
 
 WEBSOCKET_URI = os.getenv("WEBSOCKET_URI")
 if not WEBSOCKET_URI:
-    flask_address = os.getenv("FLASK_SERVER_ADDRESS", "ws://127.0.0.1")
+    flask_address = os.getenv("FLASK_SERVER_ADDRESS", "ws://localhost")
     flask_port = os.getenv("FLASK_SERVER_PORT", "5002")
     WEBSOCKET_URI = f"{flask_address}:{flask_port}"
 
@@ -79,4 +83,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
